@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shorten a link</title>
+<style>
+ body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;padding:1.5rem 0;display:flex;justify-content:center}
+ .card{background:#fff;padding:2rem;border-radius:12px;box-shadow:0 4px 20px #0001;width:min(92vw,560px);height:fit-content}
+ h1{margin-top:0;font-size:1.4rem} h2{font-size:1.05rem;margin:1.5rem 0 .5rem}
+ label{font-size:.9rem;color:#445}
+ input{width:100%;padding:.7rem;margin:.3rem 0 .8rem;border:1px solid #ccd;border-radius:8px;box-sizing:border-box;font-size:1rem}
+ button{padding:.7rem 1rem;background:#2563eb;color:#fff;border:0;border-radius:8px;font-size:1rem;cursor:pointer}
+ button.alt{background:#e5e7eb;color:#111} button.full{width:100%}
+ .row{display:flex;gap:.6rem} .row>*{flex:1}
+ #out{margin-top:1rem;word-break:break-all} .err{color:#b00020}
+ #auth{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;margin-bottom:1.2rem}
+ #auth input{margin-bottom:.5rem}
+ table{width:100%;border-collapse:collapse;font-size:.85rem}
+ td,th{text-align:left;padding:.4rem .3rem;border-bottom:1px solid #eee;word-break:break-all}
+ .muted{color:#667} .tag{color:#b00020;font-weight:600}
+</style></head><body><div class="card">
+<h1>🔗 URL Shortener</h1>
+
+<div id="auth"></div>
+
+<form id="f">
+ <label for="url">Long URL</label>
+ <input id="url" placeholder="https://example.com/very/long/link" required>
+ <div class="row">
+  <div><label for="custom">Custom code (optional)</label>
+   <input id="custom" placeholder="my-club-event"></div>
+  <div><label for="days">Expires in days (optional)</label>
+   <input id="days" type="number" min="0.01" step="any" placeholder="never"></div>
+ </div>
+ <button class="full">Shorten</button>
+</form>
+<div id="out"></div>
+<div id="mine"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = null, user = null;
+try { token = localStorage.getItem('token'); user = localStorage.getItem('user'); } catch {}
+
+function setSession(t, u) {
+  token = t; user = u;
+  try {
+    if (t) { localStorage.setItem('token', t); localStorage.setItem('user', u); }
+    else { localStorage.removeItem('token'); localStorage.removeItem('user'); }
+  } catch {}
+  renderAuth(); loadMine();
+}
+
+async function api(path, method, body) {
+  const headers = {'Content-Type': 'application/json'};
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const r = await fetch(path, {method, headers, body: body ? JSON.stringify(body) : undefined});
+  let d = {}; try { d = await r.json(); } catch {}
+  return {ok: r.ok, status: r.status, d};
+}
+
+function msg(text, isErr) {
+  const out = $('out'); out.textContent = '';
+  const s = document.createElement('span');
+  if (isErr) s.className = 'err';
+  s.textContent = text; out.append(s);
+}
+
+function renderAuth() {
+  const box = $('auth'); box.textContent = '';
+  if (token) {
+    const b = document.createElement('b'); b.textContent = user;
+    const lo = document.createElement('button');
+    lo.className = 'alt'; lo.textContent = 'Log out'; lo.style.marginLeft = '.8rem';
+    lo.onclick = () => setSession(null, null);
+    box.append('Signed in as ', b, lo);
+    return;
+  }
+  box.innerHTML =
+    '<div class="muted" style="margin-bottom:.5rem">Optional: sign in to keep a list of your links.</div>' +
+    '<input id="u" placeholder="username" autocomplete="username">' +
+    '<input id="p" type="password" placeholder="password (8+ chars)" autocomplete="current-password">' +
+    '<div class="row"><button id="login">Log in</button><button id="reg" class="alt">Register</button></div>';
+  const go = async path => {
+    const r = await api(path, 'POST', {username: $('u').value, password: $('p').value});
+    if (r.ok) { $('out').textContent = ''; setSession(r.d.token, r.d.username); }
+    else msg(r.d.error || 'Something went wrong.', true);
+  };
+  $('login').onclick = () => go('/api/login');
+  $('reg').onclick = () => go('/api/register');
+}
+
+async function loadMine() {
+  const box = $('mine'); box.textContent = '';
+  if (!token) return;
+  const r = await api('/api/my-links', 'GET');
+  if (r.status === 401) { setSession(null, null); return; }
+  if (!r.ok || !r.d.links.length) return;
+  const h = document.createElement('h2'); h.textContent = 'My links'; box.append(h);
+  const t = document.createElement('table');
+  t.innerHTML = '<tr><th>Short link</th><th>Clicks</th><th>Expires</th></tr>';
+  for (const l of r.d.links) {
+    const tr = document.createElement('tr');
+    const c1 = document.createElement('td');
+    const a = document.createElement('a'); a.href = a.textContent = l.short_url; a.target = '_blank';
+    const o = document.createElement('div'); o.className = 'muted';
+    o.textContent = l.original_url.length > 50 ? l.original_url.slice(0, 50) + '…' : l.original_url;
+    c1.append(a, o);
+    const c2 = document.createElement('td'); c2.textContent = l.clicks;
+    const c3 = document.createElement('td');
+    if (l.expired) { c3.textContent = 'Expired'; c3.className = 'tag'; }
+    else c3.textContent = l.expires_at ? new Date(l.expires_at).toLocaleString() : 'Never';
+    tr.append(c1, c2, c3); t.append(tr);
+  }
+  box.append(t);
+}
+
+$('f').onsubmit = async e => {
+  e.preventDefault();
+  msg('Working...');
+  try {
+    const r = await api('/api/shorten', 'POST', {
+      url: $('url').value, custom_code: $('custom').value, expires_in_days: $('days').value});
+    if (r.status === 401) { setSession(null, null); msg(r.d.error, true); return; }
+    if (!r.ok) { msg(r.d.error || 'Something went wrong.', true); return; }
+    const out = $('out'); out.textContent = 'Your short link: ';
+    const a = document.createElement('a'); a.href = a.textContent = r.d.short_url; a.target = '_blank';
+    out.append(a);
+    if (r.d.expires_at) out.append(' (expires ' + new Date(r.d.expires_at).toLocaleString() + ')');
+    loadMine();
+  } catch { msg('Network error, try again.', true); }
+};
+
+renderAuth(); loadMine();
+</script></body></html>

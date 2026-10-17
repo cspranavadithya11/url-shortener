@@ -1,0 +1,21 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Order matters: specific routes first, catch-all /:code last.
+# Static files (like / and index.html) always win over these rules.
+[[redirects]]
+  from = "/api/stats/:code"
+  to = "/.netlify/functions/stats?code=:code"
+  status = 200
+
+# /api/shorten, /api/register, /api/login, /api/my-links
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/:code"
+  to = "/.netlify/functions/redirect?code=:code"
+  status = 200

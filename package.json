@@ -1,0 +1,10 @@
+{
+  "name": "club-url-shortener",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "URL shortener on Netlify Functions + Netlify Blobs",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
