@@ -1,7 +1,16 @@
 import { store, json, isExpired } from "../lib/util.mjs";
 
+// Accept the code from ?code= or from the end of the URL path.
+function getCode(req) {
+  const u = new URL(req.url);
+  const q = u.searchParams.get("code");
+  if (q) return q;
+  const last = u.pathname.split("/").filter(Boolean).pop() || "";
+  return decodeURIComponent(last);
+}
+
 export default async (req) => {
-  const code = new URL(req.url).searchParams.get("code") || "";
+  const code = getCode(req);
   const rec = code ? await store().get(code, { type: "json" }) : null;
   if (!rec) return json({ error: "Short link not found." }, 404);
 
