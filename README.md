@@ -2,6 +2,8 @@
 
 Paste a long URL, get a short link that redirects to it. Runs on Netlify Functions, with data stored in Netlify Blobs (no database to set up).
 
+Live site: https://url-shortener-dsc.netlify.app
+
 ## Features
 
 | Requirement | How it's done |
@@ -12,9 +14,11 @@ Paste a long URL, get a short link that redirects to it. Runs on Netlify Functio
 | Expiration dates | Optional `expires_in_days` or `expires_at`; expired links return 410 |
 | Database storage | Netlify Blobs (links, users, sessions) |
 | User accounts | Register/login (scrypt-hashed passwords, 7-day session tokens), "My links" list |
+| Delete links | Signed-in users can delete their own links |
+| QR codes | Every short link gets a downloadable QR code (generated in the browser) |
 | Cloud deployment | Netlify, auto-deploys from GitHub |
 
-Accounts are optional: anyone can shorten a link, but signed-in users get a list of their links with click counts and expiry.
+Accounts are optional: anyone can shorten a link, but signed-in users get a list of their links with click counts, expiry, QR codes and a delete button.
 
 ## API
 
@@ -26,11 +30,12 @@ Accounts are optional: anyone can shorten a link, but signed-in users get a list
 | POST | `/api/register` | `{"username", "password"}` returns `{token}` |
 | POST | `/api/login` | `{"username", "password"}` returns `{token}` |
 | GET | `/api/my-links` | Needs Bearer token; your links with clicks |
+| POST | `/api/delete-link` | `{"code"}`; needs Bearer token and you must own the link |
 
 Example:
 
 ```bash
-curl -X POST https://YOURSITE.netlify.app/api/shorten \
+curl -X POST https://url-shortener-dsc.netlify.app/api/shorten \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/long/page","custom_code":"club","expires_in_days":7}'
 ```
@@ -49,7 +54,7 @@ curl -X POST https://YOURSITE.netlify.app/api/shorten \
    ```
 3. Go to app.netlify.com, **Add new site**, **Import an existing project**, choose GitHub, pick the repo.
 4. Build settings are read from `netlify.toml`, so just click **Deploy**.
-5. Optional: **Site configuration**, **Change site name** for an address like `yourclub.netlify.app`.
+5. In the site's settings, make sure the site is **public** if others should use it.
 
 Every `git push` to `main` redeploys automatically.
 
@@ -67,3 +72,4 @@ Open http://localhost:8888.
 - Click counts are not atomic, so two clicks at the exact same moment may count as one.
 - There is no rate limiting on register/login/shorten. Fine for a club project; add limits before public launch.
 - Expired links stay in storage (they just stop redirecting).
+- `public/qrcode.js` is the MIT-licensed [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) library, included so the site has no outside dependencies.

@@ -10,12 +10,17 @@
  input{width:100%;padding:.7rem;margin:.3rem 0 .8rem;border:1px solid #ccd;border-radius:8px;box-sizing:border-box;font-size:1rem}
  button{padding:.7rem 1rem;background:#2563eb;color:#fff;border:0;border-radius:8px;font-size:1rem;cursor:pointer}
  button.alt{background:#e5e7eb;color:#111} button.full{width:100%}
+ button.sm{padding:.3rem .6rem;font-size:.8rem;margin:0 .2rem .2rem 0}
+ button.danger{background:#fee2e2;color:#991b1b}
  .row{display:flex;gap:.6rem} .row>*{flex:1}
  #out{margin-top:1rem;word-break:break-all} .err{color:#b00020}
+ #qr{margin-top:1rem;text-align:center}
+ #qr canvas{width:180px;height:180px;image-rendering:pixelated;border:1px solid #e2e8f0;border-radius:8px}
+ #qr a{display:inline-block;margin-top:.4rem;font-size:.9rem}
  #auth{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;margin-bottom:1.2rem}
  #auth input{margin-bottom:.5rem}
  table{width:100%;border-collapse:collapse;font-size:.85rem}
- td,th{text-align:left;padding:.4rem .3rem;border-bottom:1px solid #eee;word-break:break-all}
+ td,th{text-align:left;padding:.4rem .3rem;border-bottom:1px solid #eee;word-break:break-all;vertical-align:top}
  .muted{color:#667} .tag{color:#b00020;font-weight:600}
 </style></head><body><div class="card">
 <h1>🔗 URL Shortener</h1>
@@ -34,9 +39,11 @@
  <button class="full">Shorten</button>
 </form>
 <div id="out"></div>
+<div id="qr"></div>
 <div id="mine"></div>
 </div>
 
+<script src="/qrcode.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let token = null, user = null;
@@ -66,6 +73,30 @@ function msg(text, isErr) {
   s.textContent = text; out.append(s);
 }
 
+// ---- QR code (drawn on a canvas from the vendored qrcode.js) ----
+function qrCanvas(text) {
+  const qr = qrcode(0, 'M'); qr.addData(text); qr.make();
+  const n = qr.getModuleCount(), cell = 8, margin = cell * 4, size = n * cell + margin * 2;
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, size, size); g.fillStyle = '#000';
+  for (let r = 0; r < n; r++)
+    for (let k = 0; k < n; k++)
+      if (qr.isDark(r, k)) g.fillRect(margin + k * cell, margin + r * cell, cell, cell);
+  return c;
+}
+
+function showQR(url, code) {
+  const box = $('qr'); box.textContent = '';
+  try {
+    const c = qrCanvas(url);
+    const dl = document.createElement('a');
+    dl.textContent = 'Download QR code (PNG)';
+    dl.href = c.toDataURL('image/png'); dl.download = 'qr-' + code + '.png';
+    box.append(c, document.createElement('br'), dl);
+  } catch { /* QR is a nice-to-have; ignore failures */ }
+}
+
 function renderAuth() {
   const box = $('auth'); box.textContent = '';
   if (token) {
@@ -90,6 +121,16 @@ function renderAuth() {
   $('reg').onclick = () => go('/api/register');
 }
 
+async function delLink(code) {
+  if (!confirm('Delete "' + code + '"? The short link will stop working.')) return;
+  const r = await api('/api/delete-link', 'POST', {code});
+  if (r.status === 401) { setSession(null, null); msg(r.d.error, true); return; }
+  if (!r.ok) { msg(r.d.error || 'Could not delete.', true); return; }
+  $('qr').textContent = '';
+  msg('Deleted ' + code + '.');
+  loadMine();
+}
+
 async function loadMine() {
   const box = $('mine'); box.textContent = '';
   if (!token) return;
@@ -98,7 +139,7 @@ async function loadMine() {
   if (!r.ok || !r.d.links.length) return;
   const h = document.createElement('h2'); h.textContent = 'My links'; box.append(h);
   const t = document.createElement('table');
-  t.innerHTML = '<tr><th>Short link</th><th>Clicks</th><th>Expires</th></tr>';
+  t.innerHTML = '<tr><th>Short link</th><th>Clicks</th><th>Expires</th><th></th></tr>';
   for (const l of r.d.links) {
     const tr = document.createElement('tr');
     const c1 = document.createElement('td');
@@ -110,14 +151,22 @@ async function loadMine() {
     const c3 = document.createElement('td');
     if (l.expired) { c3.textContent = 'Expired'; c3.className = 'tag'; }
     else c3.textContent = l.expires_at ? new Date(l.expires_at).toLocaleString() : 'Never';
-    tr.append(c1, c2, c3); t.append(tr);
+    const c4 = document.createElement('td');
+    const qb = document.createElement('button');
+    qb.className = 'sm alt'; qb.textContent = 'QR';
+    qb.onclick = () => { showQR(l.short_url, l.code); $('qr').scrollIntoView({behavior: 'smooth', block: 'center'}); };
+    const db = document.createElement('button');
+    db.className = 'sm danger'; db.textContent = 'Delete';
+    db.onclick = () => delLink(l.code);
+    c4.append(qb, db);
+    tr.append(c1, c2, c3, c4); t.append(tr);
   }
   box.append(t);
 }
 
 $('f').onsubmit = async e => {
   e.preventDefault();
-  msg('Working...');
+  msg('Working...'); $('qr').textContent = '';
   try {
     const r = await api('/api/shorten', 'POST', {
       url: $('url').value, custom_code: $('custom').value, expires_in_days: $('days').value});
@@ -127,6 +176,7 @@ $('f').onsubmit = async e => {
     const a = document.createElement('a'); a.href = a.textContent = r.d.short_url; a.target = '_blank';
     out.append(a);
     if (r.d.expires_at) out.append(' (expires ' + new Date(r.d.expires_at).toLocaleString() + ')');
+    showQR(r.d.short_url, r.d.code);
     loadMine();
   } catch { msg('Network error, try again.', true); }
 };
